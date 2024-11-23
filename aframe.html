@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>A-Frame Sphere Mouse Follow</title>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+    <script src="https://aframe.io/releases/1.6.0/aframe.min.js"></script>
+    <!-- <script src="follow_rotation.js"></script> -->
+    <!-- <script src="https://unpkg.com/aframe-line-component"></script> -->
+    <style>
+        .container {
+            position: relative;
+            width: 100%;
+            /* width: 640px; */
+            /* height: 480px; */
+        }
+        #input_video {
+
+            position: absolute;
+            display: none;
+            width: 100vh;
+        }
+        #output_canvas {
+            position: absolute;
+            width: 100%;
+            /* width: 640px; */
+            /* height: 480px; */
+        }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+        <video id="input_video"></video>
+        <!-- <canvas id="output_canvas"></canvas> -->
+    </div>
+    <a-scene id="scene">
+      <!-- Camera and Controls -->
+      <a-entity camera position="0 1.6 5" look-controls></a-entity>
+
+      <!-- Ground Surface -->
+      <a-plane id="canvas-plane" position="0 0 0" rotation="-90 0 0" width="10" height="10" color="#7BC8A4"></a-plane>
+
+      <!-- Cube -->
+      <a-box id="cube" position="0 1 -2" rotation="0 67 0" depth="1" height="1" width="1" color="#4CC3D9"></a-box>
+      <!-- <a-entity id="cube" geometry="primitive: box" position="0 1 -2" rotation="0 67 0"
+        depth="1" height="1" width="1" color="#4CC3D9">
+      </a-entity> -->
+
+      <!-- Sky -->
+      <a-sky color="#ECECEC"></a-sky>
+
+      <!-- Ambient Light -->
+      <a-light type="ambient" color="#FFF"></a-light>
+
+      <!-- Directional Light -->
+      <a-light type="directional" position="0 5 5" intensity="0.5"></a-light>
+
+      
+      <a-entity id="hand-landmarks">
+        <!-- Spheres will be created dynamically here -->
+      </a-entity>
+      <a-entity id="hand-connections">
+        <!-- Lines will be created here -->
+      </a-entity>
+    </a-scene>
+    <script>
+       
+        const handLandmarks = document.getElementById('hand-landmarks');
+        const cube = document.getElementById('cube')
+        for (let i = 0; i < 21; i++) {
+            const sphere = document.createElement('a-sphere');
+
+            if (i==0) {
+                sphere.setAttribute('class', 'wrist')
+            }
+            if (i == 4) {
+                sphere.setAttribute('class', 'thumb')
+            } else if (i == 8) {
+                sphere.setAttribute('class', 'index')
+            }
+            sphere.setAttribute('id', `landmark-${i}`);
+            sphere.setAttribute('radius', '0.1');  // Make them smaller than the thumb/index spheres
+            sphere.setAttribute('color', '#EF2D5E');
+            sphere.setAttribute('position', '0 0 0');
+            handLandmarks.appendChild(sphere);
+        }
+
+        // cube.setAttribute('follow-rotation', 'point1: #landmark-8; point2: #landmark-0');
+
+        const PINCH_THRESHOLD = 0.07;
+        const ANGLE_THRESHOLD = 30;
+
+        const BENT_GESTURE_THRESHOLD = 30;
+
+        const HAND_CONNECTIONS = [
+            [0, 1], [1, 2], [2, 3], [3, 4],           // Thumb
+            [0, 5], [5, 6], [6, 7], [7, 8],           // Index finger
+            [0, 9], [9, 10], [10, 11], [11, 12],      // Middle finger
+            [0, 13], [13, 14], [14, 15], [15, 16],    // Ring finger
+            [0, 17], [17, 18], [18, 19], [19, 20],    // Pinky
+            [0, 17], [5, 9], [9, 13], [13, 17]        // Palm
+        ];
+
+        const handConnections = document.getElementById('hand-connections');
+        HAND_CONNECTIONS.forEach((connection, index) => {
+            const line = document.createElement('a-entity');
+            line.setAttribute('id', `connection-${index}`);
+            line.setAttribute('line', {
+                color: '#FFFFFF',
+                opacity: 0.5
+            });
+            handConnections.appendChild(line);
+        });
+
+  
+    </script>
+    <script>
+        function onResults(results) {
+            if (results.multiHandLandmarks) {
+                for (const landmarks of results.multiHandLandmarks) {
+
+                    const isPinching = detectPinchGesture(landmarks);
+                    // const isBent = detectBentGesture(landmarks);
+                    drawHandObjects(landmarks, isPinching)
+            
+                }
+            }
+        }
+
+        const videoElement = document.getElementById('input_video');
+
+        function calculateDistance(point1, point2) {
+            const x1 = typeof point1.x === 'number' ? point1.x : point1.x.value || 0;
+            const y1 = typeof point1.y === 'number' ? point1.y : point1.y.value || 0;
+            const z1 = typeof point1.z === 'number' ? point1.z : point1.z.value || 0;
+            
+            const x2 = typeof point2.x === 'number' ? point2.x : point2.x.value || 0;
+            const y2 = typeof point2.y === 'number' ? point2.y : point2.y.value || 0;
+            const z2 = typeof point2.z === 'number' ? point2.z : point2.z.value || 0;
+            
+            const distance = Math.sqrt(
+                Math.pow(x1 - x2, 2) + 
+                Math.pow(y1 - y2, 2) + 
+                Math.pow(z1 - z2, 2)
+            );
+            
+            return distance;
+        }
+
+        function calculateAngle3D(point1, point2, point3) {
+            const vector1 = {
+                x: point1.x - point2.x,
+                y: point1.y - point2.y,
+                z: point1.z - point2.z
+            };
+            
+            const vector2 = {
+                x: point3.x - point2.x,
+                y: point3.y - point2.y,
+                z: point3.z - point2.z
+            };
+
+            const dotProduct = vector1.x * vector2.x + vector1.y * vector2.y + vector1.z * vector2.z;
+            const magnitude1 = Math.sqrt(vector1.x * vector1.x + vector1.y * vector1.y + vector1.z * vector1.z);
+            const magnitude2 = Math.sqrt(vector2.x * vector2.x + vector2.y * vector2.y + vector2.z * vector2.z);
+
+            const angleRadians = Math.acos(dotProduct / (magnitude1 * magnitude2));
+            return angleRadians * (180 / Math.PI);
+        }
+
+
+
+        function isPointInsideCube(point, cubePosition, threshold=1.0) {
+            return calculateDistance(point, cubePosition) < threshold;
+        }
+
+        function drawHandPoints(landmarks) {
+            landmarks.forEach((landmark, index) => {
+                const sphere = document.getElementById(`landmark-${index}`);
+                const ndcX = (landmark.x) * 2 - 1;
+                const ndcY = -(landmark.y) * 2 + 1;
+                const ndcZ = -landmark.z * 5;
+
+                const sphereX = ndcX * 5;
+                const sphereY = ndcY * 5;
+                const sphereZ = ndcZ - 2;
+
+                sphere.setAttribute('position', {
+                    x: sphereX,
+                    y: sphereY,
+                    z: sphereZ
+                });
+            });
+        }
+
+        function drawHandConnections(landmarks) {
+            HAND_CONNECTIONS.forEach((connection, index) => {
+                const [start, end] = connection;
+                const startPos = document.getElementById(`landmark-${start}`).getAttribute('position');
+                const endPos = document.getElementById(`landmark-${end}`).getAttribute('position');
+                
+                const line = document.getElementById(`connection-${index}`);
+                line.setAttribute('line', {
+                    start: `${startPos.x} ${startPos.y} ${startPos.z}`,
+                    end: `${endPos.x} ${endPos.y} ${endPos.z}`,
+                    color: '#FFFFFF',
+                    opacity: 0.5
+                });
+            });
+        }
+
+        function detectPinchGesture(landmarks) {
+            const thumbTip = landmarks[4];
+            const indexTip = landmarks[8];
+            const wrist = landmarks[0];
+
+            const pinchDistance = calculateDistance(thumbTip, indexTip);
+            const fingersAngle = calculateAngle3D(indexTip, wrist, thumbTip)
+            const isPinching = pinchDistance < PINCH_THRESHOLD && 
+                fingersAngle < ANGLE_THRESHOLD;
+            return isPinching;
+        }
+
+        let previousIndexPosition = null;
+
+        const thumb_sphere = document.getElementsByClassName('thumb')[0]
+        const index_sphere = document.getElementsByClassName('index')[0]
+        const wrist_sphere = document.getElementsByClassName('wrist')[0]
+        // const cube = document.getElementById('cube');
+
+        function drawHandObjects(landmarks, isPinching) {
+            drawHandPoints(landmarks);
+            drawHandConnections(landmarks);
+
+
+            const thumbPosition = thumb_sphere.getAttribute('position');
+            const indexPosition = index_sphere.getAttribute('position');
+            const wristPosition = wrist_sphere.getAttribute('position')
+            const cubePosition = cube.getAttribute('position');
+
+        
+            const pinchingWithinCube = isPinching &&
+                                        isPointInsideCube(thumbPosition, cubePosition) &&
+                                        isPointInsideCube(indexPosition, cubePosition);
+            if (pinchingWithinCube) {
+                cube.object3D.position.set(indexPosition.x, indexPosition.y, indexPosition.z)
+                cube.setAttribute('color', '#EF0E14');
+
+                // if (previousIndexPosition) {
+                //     hangleRoration(previousIndexPosition, indexPosition, wristPosition)
+                // } 
+                // previousIndexPosition = indexPosition
+                
+
+            } else {
+                cube.setAttribute('color', '#4CC3D9');  
+            }
+        }
+
+        function calculateAngle2D(p1, p2, p3) {
+            // Create vectors from the points
+            const vector1 = {
+                x: p2.x - p1.x,
+                y: p2.y - p1.y
+            };
+            const vector2 = {
+                x: p3.x - p2.x,
+                y: p3.y - p2.y
+            };
+
+            // Calculate the magnitudes of the vectors
+            const magnitude1 = Math.sqrt(vector1.x ** 2 + vector1.y ** 2);
+            const magnitude2 = Math.sqrt(vector2.x ** 2 + vector2.y ** 2);
+
+            // Check for zero magnitude to avoid NaN
+            if (magnitude1 === 0 || magnitude2 === 0) {
+                return 0; // Return a default angle if either vector has zero magnitude
+            }
+
+            // Calculate the dot product
+            const dotProduct = vector1.x * vector2.x + vector1.y * vector2.y;
+
+            // Calculate the angle in radians
+            const angleRadians = Math.acos(dotProduct / (magnitude1 * magnitude2));
+            // Convert to degrees
+            const angleDegrees = angleRadians * (180 / Math.PI);
+
+            return angleDegrees;
+        }
+
+        let frameCounter = 0; // Initialize a frame counter
+
+        function hangleRoration(previousIndexPosition, indexPosition, wristPosition) {
+
+            // let point1 = new THREE.Vector3(previousIndexPosition.x, previousIndexPosition.y, previousIndexPosition.z);
+            // let point2 = new THREE.Vector3(wristPosition.x, wristPosition.y, wristPosition.z)
+
+            // let originalVector = new THREE.Vector3();
+            // originalVector.subVectors(point1, point2);
+
+            // let newPoint1 = new THREE.Vector3(indexPosition.x, indexPosition.y, indexPosition.z);
+            // let newVector = new THREE.Vector3();
+            // newVector.subVectors(newPoint1, point2);
+
+            // originalVector.normalize();
+            // newVector.normalize();
+
+            // let quaternion = new THREE.Quaternion();
+            // quaternion.setFromUnitVectors(originalVector, newVector);
+
+            // let euler = new THREE.Euler();
+            // euler.setFromQuaternion(quaternion);
+
+            // let xRot = THREE.Math.radToDeg(euler.x);
+            // let yRot = THREE.Math.radToDeg(euler.y);
+            // let zRot = THREE.Math.radToDeg(euler.z);
+
+            
+
+            // Normalize positions from MediaPipe to A-Frame
+            // const distance = calculateDistance(previousIndexPosition, indexPosition);
+            // if (distance < 0.1)
+            //     return;
+
+            // Increment the frame counter
+            // frameCounter++;
+
+            // // Only calculate angles every other frame
+            // if (frameCounter % 10 === 0) {
+            //     // Calculate angles for each view
+            //     const angleX = calculateAngle2D(
+            //         { x: previousIndexPosition.x, y: previousIndexPosition.y },
+            //         { x: indexPosition.x, y: indexPosition.y },
+            //         { x: wristPosition.x, y: wristPosition.y }
+            //     );
+            //     const angleY = calculateAngle2D(
+            //         { x: previousIndexPosition.z, y: previousIndexPosition.y },
+            //         { x: indexPosition.z, y: indexPosition.y },
+            //         { x: wristPosition.z, y: wristPosition.y }
+            //     );
+            //     const angleZ = calculateAngle2D(
+            //         { x: previousIndexPosition.x, y: previousIndexPosition.z },
+            //         { x: indexPosition.x, y: indexPosition.z },
+            //         { x: wristPosition.x, y: wristPosition.z }
+            //     );
+            //     console.log( cube.object3D.rotation)
+            //     // Apply the calculated angles to the cube's rotation
+            //     cube.object3D.rotation.x += angleX;
+            //     cube.object3D.rotation.x %= 360;
+            //     cube.object3D.rotation.y += angleY;
+            //     cube.object3D.rotation.y %= 360;
+            //     cube.object3D.rotation.z += angleZ;
+            //     cube.object3D.rotation.z %= 360;
+
+            //     frameCounter = 0;
+            // }
+        }
+
+        async function initializeHandDetection() {
+            const hands = new Hands({
+                locateFile: (file) => {
+                    return `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`;
+                }
+            });
+
+            hands.setOptions({
+                maxNumHands: 1,
+                modelComplexity: 1,
+                minDetectionConfidence: 0.5,
+                minTrackingConfidence: 0.5
+            });
+
+            hands.onResults(onResults);
+
+            const camera = new Camera(videoElement, {
+                onFrame: async () => {
+                    await hands.send({image: videoElement});
+                },
+                // width: 640,
+                // height: 480
+            });
+
+            await camera.start();
+        }
+
+        // Start everything
+        initializeHandDetection();
+    </script>
+  </body>
+</html>
