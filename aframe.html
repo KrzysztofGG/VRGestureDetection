@@ -16,12 +16,12 @@
             /* width: 640px; */
             /* height: 480px; */
         }
-        #input_video {
+        /* #input_video {
 
             position: absolute;
             display: none;
             width: 100vh;
-        }
+        } */
         #output_canvas {
             position: absolute;
             width: 100%;
@@ -40,16 +40,16 @@
       <a-entity camera position="0 1.6 5" look-controls></a-entity>
 
       <!-- Ground Surface -->
-      <a-plane id="canvas-plane" position="0 0 0" rotation="-90 0 0" width="10" height="10" color="#7BC8A4"></a-plane>
+      <a-plane id="canvas-plane" position="0 0 0" rotation="-90 0 0"
+        width="1000" height="1000" 
+        material="src: url(plane.jpg); repeat: 2 2; side: double;">
+      </a-plane>
 
       <!-- Cube -->
       <a-box id="cube" position="0 1 -2" rotation="0 67 0" depth="1" height="1" width="1" color="#4CC3D9"></a-box>
-      <!-- <a-entity id="cube" geometry="primitive: box" position="0 1 -2" rotation="0 67 0"
-        depth="1" height="1" width="1" color="#4CC3D9">
-      </a-entity> -->
 
       <!-- Sky -->
-      <a-sky color="#ECECEC"></a-sky>
+      <a-sky color="#e9f5f8"></a-sky>
 
       <!-- Ambient Light -->
       <a-light type="ambient" color="#FFF"></a-light>
@@ -66,9 +66,24 @@
       </a-entity>
     </a-scene>
     <script>
-       
+        const CUBE_DIMENSION = 1
+
+        const ANGLE_THRESHOLD = 30;
+        const BENT_GESTURE_THRESHOLD = 30;
+        const GRAB_THRESHOLD = Math.sqrt(Math.pow(CUBE_DIMENSION/2, 2) + Math.pow((CUBE_DIMENSION * Math.sqrt(2))/2, 2))
+        console.log(GRAB_THRESHOLD)
+
+
         const handLandmarks = document.getElementById('hand-landmarks');
         const cube = document.getElementById('cube')
+
+        //make sure cube has correct dimensions
+        cube.setAttribute('width', CUBE_DIMENSION)
+        cube.setAttribute('height', CUBE_DIMENSION)
+        cube.setAttribute('depth', CUBE_DIMENSION)
+
+
+
         for (let i = 0; i < 21; i++) {
             const sphere = document.createElement('a-sphere');
 
@@ -89,10 +104,8 @@
 
         // cube.setAttribute('follow-rotation', 'point1: #landmark-8; point2: #landmark-0');
 
-        const PINCH_THRESHOLD = 0.07;
-        const ANGLE_THRESHOLD = 30;
 
-        const BENT_GESTURE_THRESHOLD = 30;
+  
 
         const HAND_CONNECTIONS = [
             [0, 1], [1, 2], [2, 3], [3, 4],           // Thumb
@@ -139,12 +152,14 @@
             const x2 = typeof point2.x === 'number' ? point2.x : point2.x.value || 0;
             const y2 = typeof point2.y === 'number' ? point2.y : point2.y.value || 0;
             const z2 = typeof point2.z === 'number' ? point2.z : point2.z.value || 0;
+
             
             const distance = Math.sqrt(
                 Math.pow(x1 - x2, 2) + 
                 Math.pow(y1 - y2, 2) + 
                 Math.pow(z1 - z2, 2)
             );
+
             
             return distance;
         }
@@ -170,7 +185,13 @@
             return angleRadians * (180 / Math.PI);
         }
 
-
+        function translateLandmarkPointToAFrame(point) {
+            return {
+                x: (point.x * 2 - 1) * 5,
+                y: -(point.y * 2 - 1) * 5,
+                z: -point.z * 5 - 2
+            };
+        }
 
         function isPointInsideCube(point, cubePosition, threshold=1.0) {
             return calculateDistance(point, cubePosition) < threshold;
@@ -179,19 +200,8 @@
         function drawHandPoints(landmarks) {
             landmarks.forEach((landmark, index) => {
                 const sphere = document.getElementById(`landmark-${index}`);
-                const ndcX = (landmark.x) * 2 - 1;
-                const ndcY = -(landmark.y) * 2 + 1;
-                const ndcZ = -landmark.z * 5;
-
-                const sphereX = ndcX * 5;
-                const sphereY = ndcY * 5;
-                const sphereZ = ndcZ - 2;
-
-                sphere.setAttribute('position', {
-                    x: sphereX,
-                    y: sphereY,
-                    z: sphereZ
-                });
+                const translatedPoint = translateLandmarkPointToAFrame(landmark)
+                sphere.object3D.position.set(translatedPoint.x, translatedPoint.y, translatedPoint.z)
             });
         }
 
@@ -212,14 +222,26 @@
         }
 
         function detectPinchGesture(landmarks) {
-            const thumbTip = landmarks[4];
-            const indexTip = landmarks[8];
-            const wrist = landmarks[0];
+            const thumbTip = translateLandmarkPointToAFrame(landmarks[4]);
+            const indexTip = translateLandmarkPointToAFrame(landmarks[8]);
+            const wrist = translateLandmarkPointToAFrame(landmarks[0]);
 
-            const pinchDistance = calculateDistance(thumbTip, indexTip);
-            const fingersAngle = calculateAngle3D(indexTip, wrist, thumbTip)
-            const isPinching = pinchDistance < PINCH_THRESHOLD && 
-                fingersAngle < ANGLE_THRESHOLD;
+            // const pinchDistance = calculateDistance(thumbTip, indexTip);
+            const fingersAngle = calculateAngle3D(indexTip, wrist, thumbTip);
+            
+            // Get the cube's position
+            const cubePosition = cube.getAttribute('position');
+        
+            // Calculate distances from cube center
+            const thumbDistanceToCube = calculateDistance(thumbTip, cubePosition);
+            const indexDistanceToCube = calculateDistance(indexTip, cubePosition);
+
+            const isCloseToCube = thumbDistanceToCube <= GRAB_THRESHOLD && indexDistanceToCube <= GRAB_THRESHOLD;
+            
+        
+            const isPinching = 
+                fingersAngle < ANGLE_THRESHOLD && 
+                isCloseToCube;
             return isPinching;
         }
 
@@ -234,26 +256,20 @@
             drawHandPoints(landmarks);
             drawHandConnections(landmarks);
 
+            const thumbPosition = translateLandmarkPointToAFrame(landmarks[4]);
+            const indexPosition = translateLandmarkPointToAFrame(landmarks[8]);
+            const wristPosition = translateLandmarkPointToAFrame(landmarks[0]);
 
-            const thumbPosition = thumb_sphere.getAttribute('position');
-            const indexPosition = index_sphere.getAttribute('position');
-            const wristPosition = wrist_sphere.getAttribute('position')
-            const cubePosition = cube.getAttribute('position');
+            if (isPinching) {
+                // Calculate the average position between thumb and index
+                const averagePosition = {
+                    x: (thumbPosition.x + indexPosition.x) / 2,
+                    y: (thumbPosition.y + indexPosition.y) / 2,
+                    z: (thumbPosition.z + indexPosition.z) / 2
+                };
 
-        
-            const pinchingWithinCube = isPinching &&
-                                        isPointInsideCube(thumbPosition, cubePosition) &&
-                                        isPointInsideCube(indexPosition, cubePosition);
-            if (pinchingWithinCube) {
-                cube.object3D.position.set(indexPosition.x, indexPosition.y, indexPosition.z)
+                cube.object3D.position.set(averagePosition.x, averagePosition.y, averagePosition.z);
                 cube.setAttribute('color', '#EF0E14');
-
-                // if (previousIndexPosition) {
-                //     hangleRoration(previousIndexPosition, indexPosition, wristPosition)
-                // } 
-                // previousIndexPosition = indexPosition
-                
-
             } else {
                 cube.setAttribute('color', '#4CC3D9');  
             }
