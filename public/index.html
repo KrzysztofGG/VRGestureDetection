@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>VR Gestures</title>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+    <script src="https://aframe.io/releases/1.6.0/aframe.min.js"></script>
+    <script src="utils.js"></script>
+    <script src="cube.js"></script>
+    <script src="hand_landmarks.js"></script>
+    <script src="hand_connections.js"></script>
+    <script src="logic.js"></script>
+    <link rel="stylesheet" href="styles.css">
+    
+    <style>
+
+    </style>
+  </head>
+  <body>
+    <div class="controls">
+        <button id="vr-button" class="button">Enter VR</button>
+        <select id="camera-select" class="button"></select>
+    </div>
+
+    <div class="container">
+        <video id="input_video"></video>
+    </div>
+    <a-scene id="scene">
+      <!-- Camera and Controls -->
+      <a-entity camera position="0 1.6 3" look-controls></a-entity>
+
+      <!-- Ground Surface -->
+      <a-plane id="canvas-plane" position="0 0 0" rotation="-90 0 0"
+        width="1000" height="1000" 
+        material="src: url(plane.jpg); repeat: 2 2; side: double;">
+      </a-plane>
+
+      <!-- Cube -->
+      <a-entity id="cube" position="0 0 -2" falling-cube
+                geometry="primitive: box; width: 1; height: 1; depth: 1" 
+                color="#ADD8E6"></a-entity>
+      
+      <!-- Sky -->
+      <a-sky color="#e9f5f8"></a-sky>
+
+      <!-- Ambient Light -->
+      <a-light type="ambient" color="#FFF"></a-light>
+
+      <!-- Directional Light -->
+      <a-light type="directional" position="0 5 5" intensity="0.5"></a-light>
+
+      <a-entity id="hand-landmarks" hand-landmarks>
+        <!-- Landmard speheres will be created here -->
+      </a-entity>
+      <a-entity id="hand-connections" hand-connections></a-entity>
+
+    </a-scene>
+
+  </body>
+</html>
