@@ -1,3 +1,6 @@
+import { translateLandmarkPointToAFrame } from './utils.js';
+import ObjectGrabber from './objectGrabber.js';
+
 AFRAME.registerComponent('hand-connections', {
     schema: {
         connections: {type: 'array', default:[[0, 1], [1, 2], [2, 3], [3, 4],           
@@ -41,5 +44,15 @@ AFRAME.registerComponent('hand-connections', {
                 opacity: 0.5
             });
         });
+    },
+    tick: function () {
+        try {
+            const objectGrabber = ObjectGrabber.getInstance();
+            if (objectGrabber && objectGrabber.landmarks) {
+                this.updateConnections(objectGrabber.landmarks);
+            }
+        } catch (error) {
+            console.error("ObjectGrabber instance not created yet:", error.message);
+        }
     }
 });
